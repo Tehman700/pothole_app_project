@@ -1,6 +1,6 @@
 import {
   StyleSheet, Text, View, Pressable, Image,
-  StatusBar, Animated, ActivityIndicator,
+  StatusBar, Animated, ActivityIndicator, Alert,
 } from 'react-native'
 import { useState, useRef, useEffect } from 'react'
 import { CameraView, useCameraPermissions } from 'expo-camera'
@@ -70,6 +70,7 @@ export default function Home() {
       setUploadStatus(res.ok ? 'done' : 'error')
     } catch (e) {
       console.error('[upload error]', e)
+      Alert.alert('Upload Error', String(e))
       setUploadStatus('error')
     } finally {
       busy.current = false
