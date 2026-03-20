@@ -1,0 +1,19 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm --version)",
+      "Bash(npx create-expo-app@latest . --template blank --yes)",
+      "Bash(npx create-expo-app@latest MyApp --template blank --yes)",
+      "Bash(npm install:*)",
+      "Bash(npm show:*)",
+      "Bash(node -e \"const d=require\\(''''fs''''\\).readFileSync\\(''''/dev/stdin'''',''''utf8''''\\); const v=JSON.parse\\(d\\); console.log\\(v.filter\\(x=>x.startsWith\\(''''18''''\\)\\).join\\(''''\\\\n''''\\)\\)\")",
+      "Bash(npx expo-codemod:*)",
+      "Bash(npx expo:*)",
+      "Bash(node -e \"process.stdin.resume\\(\\); let d=''''''''; process.stdin.on\\(''''data'''',c=>d+=c\\); process.stdin.on\\(''''end'''',\\(\\)=>{ const v=JSON.parse\\(d\\); console.log\\(v.filter\\(x=>x.startsWith\\(''''2.''''\\)\\).join\\(''''\\\\n''''\\)\\); }\\)\")",
+      "Bash(node -e \"const p=require\\(''./package.json''\\); console.log\\(''expo:'', p.dependencies.expo, ''\\\\nreact:'', p.dependencies.react, ''\\\\nreact-native:'', p.dependencies[''react-native''], ''\\\\nexpo-status-bar:'', p.dependencies[''expo-status-bar'']\\)\")",
+      "Bash(node -e \"const p=require\\(''C:/Users/tehma/Desktop/React-Native-Setup-App/MyApp/node_modules/react/package.json''\\); console.log\\(''react:'', p.version\\)\")",
+      "Bash(node -e \"const p=require\\(''C:/Users/tehma/Desktop/React-Native-Setup-App/MyApp/node_modules/react-native/package.json''\\); console.log\\(''react-native:'', p.version\\)\")",
+      "Bash(node -e \"const p=require\\(''C:/Users/tehma/Desktop/React-Native-Setup-App/MyApp/node_modules/expo-status-bar/package.json''\\); console.log\\(''expo-status-bar:'', p.version\\)\")"
+    ]
+  }
+}
