@@ -21,6 +21,7 @@ export default function Home() {
   const cameraRef   = useRef(null)
   const busy        = useRef(false)
   const cameraReady = useRef(true)
+  
 
   // All animations are handled here like the smootheness of shutter, button and that kind of animated stuff
   const flashOpacity    = useRef(new Animated.Value(0)).current
