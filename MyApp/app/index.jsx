@@ -14,6 +14,8 @@ const ZOOM_LEVELS = [
 // Just checking if branch is working or not and "PS C:\Users\tehma\Desktop\React-Native-Setup-App> git checkout -b feature/addingspacesinindexjs
 // Switched to a new branch 'feature/addingspacesinindexjs"
 
+// Added two more spaces
+
 export default function Home() {
   const [permission, requestPermission] = useCameraPermissions()
   const [capturedUri, setCapturedUri]   = useState(null)
