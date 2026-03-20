@@ -16,13 +16,13 @@ export default function Home() {
   const [capturedUri, setCapturedUri]   = useState(null)
   const [uploadStatus, setUploadStatus] = useState('idle')
   const [facing, setFacing]             = useState('back')
-  const [activeZoom, setActiveZoom]     = useState('1x')
+  const [activeZoom, setActiveZoom]     = useState('2x')
   const [zoom, setZoom]                 = useState(0)
   const cameraRef   = useRef(null)
   const busy        = useRef(false)
   const cameraReady = useRef(true)
 
-  // ── Animations ────────────────────────────────────────────────────
+  // All animations are handled here like the smootheness of shutter, button and that kind of animated stuff
   const flashOpacity    = useRef(new Animated.Value(0)).current
   const shutterScale    = useRef(new Animated.Value(1)).current
   const previewOpacity  = useRef(new Animated.Value(0)).current
