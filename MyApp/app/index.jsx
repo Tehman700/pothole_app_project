@@ -4,8 +4,11 @@ import {
 } from 'react-native'
 import { useState, useRef, useEffect } from 'react'
 import { CameraView, useCameraPermissions } from 'expo-camera'
+import AsyncStorage from '@react-native-async-storage/async-storage'
+import NetInfo from '@react-native-community/netinfo'
 
 const SERVER_URL = process.env.EXPO_PUBLIC_SERVER_URL
+const QUEUE_KEY  = 'upload_queue'   // AsyncStorage key
 const ZOOM_LEVELS = [
   { label: '1x', value: 0 },
   { label: '2x', value: 0.5 },
@@ -16,12 +19,12 @@ export default function Home() {
   const [facing, setFacing]             = useState('back')
   const [activeZoom, setActiveZoom]     = useState('1x')
   const [zoom, setZoom]                 = useState(0)
-  const [pendingCount, setPendingCount] = useState(0)  // images waiting to upload
+  const [pendingCount, setPendingCount] = useState(0)
 
   const cameraRef   = useRef(null)
-  const busy        = useRef(false)   // prevents double-tap during capture
-  const uploadQueue = useRef([])      // actual queue array (mutable, no re-render)
-  const processing  = useRef(false)   // prevents concurrent uploads
+  const busy        = useRef(false)
+  const uploadQueue = useRef([])    // in-memory queue (synced with AsyncStorage)
+  const processing  = useRef(false)
 
   // ── Animations ─────────────────────────────────────────────────────
   const flashOpacity    = useRef(new Animated.Value(0)).current
@@ -29,31 +32,80 @@ export default function Home() {
   const controlsOpacity = useRef(new Animated.Value(0)).current
   const controlsY       = useRef(new Animated.Value(60)).current
 
+  // ── On App Open ────────────────────────────────────────────────────
   useEffect(() => {
+    // 1. Load any images that were saved before app was closed
+    loadSavedQueue()
+
+    // 2. Watch network — when internet comes back, resume uploading
+    const unsubscribe = NetInfo.addEventListener(state => {
+      if (state.isConnected) {
+        processNextInQueue()
+      }
+    })
+
     Animated.parallel([
       Animated.timing(controlsOpacity, { toValue: 1, duration: 500, useNativeDriver: true, delay: 200 }),
       Animated.timing(controlsY,       { toValue: 0, duration: 500, useNativeDriver: true, delay: 200 }),
     ]).start()
+
+    return () => unsubscribe()  // cleanup listener on unmount
   }, [])
 
+  // ── AsyncStorage Helpers ───────────────────────────────────────────
+
+  const loadSavedQueue = async () => {
+    try {
+      const saved = await AsyncStorage.getItem(QUEUE_KEY)
+      if (saved) {
+        const uris = JSON.parse(saved)
+        if (uris.length > 0) {
+          uploadQueue.current = uris
+          setPendingCount(uris.length)
+          processNextInQueue()  // start uploading saved images immediately
+        }
+      }
+    } catch (e) {
+      console.error('[queue load error]', e)
+    }
+  }
+
+  const saveQueue = async (uris) => {
+    try {
+      await AsyncStorage.setItem(QUEUE_KEY, JSON.stringify(uris))
+    } catch (e) {
+      console.error('[queue save error]', e)
+    }
+  }
+
   // ── Queue Processor ────────────────────────────────────────────────
-  // Picks one image at a time from the queue and uploads it
   const processNextInQueue = async () => {
     if (processing.current || uploadQueue.current.length === 0) return
-    processing.current = true
 
+    // Check connectivity before attempting
+    const net = await NetInfo.fetch()
+    if (!net.isConnected) return  // will resume when NetInfo fires again
+
+    processing.current = true
     const uri = uploadQueue.current[0]
+
     try {
       const form = new FormData()
       form.append('file', { uri, name: 'photo.jpg', type: 'image/jpeg' })
       await fetch(`${SERVER_URL}/upload`, { method: 'POST', body: form })
-    } catch (e) {
-      console.error('[queue upload error]', e)
-    } finally {
-      uploadQueue.current.shift()                  // remove uploaded item
-      setPendingCount(uploadQueue.current.length)  // update badge
+
+      // Success — remove from queue and disk
+      uploadQueue.current.shift()
+      setPendingCount(uploadQueue.current.length)
+      await saveQueue(uploadQueue.current)
       processing.current = false
-      processNextInQueue()                         // process next item if any
+      processNextInQueue()  // move to next item
+
+    } catch (e) {
+      // Failure — keep item in queue, retry after 5 seconds
+      console.error('[upload failed, retrying in 5s]', e)
+      processing.current = false
+      setTimeout(() => processNextInQueue(), 5000)
     }
   }
 
@@ -62,13 +114,11 @@ export default function Home() {
     if (!cameraRef.current || busy.current) return
     busy.current = true
 
-    // Shutter animation
     Animated.sequence([
       Animated.timing(shutterScale, { toValue: 0.84, duration: 75,  useNativeDriver: true }),
       Animated.spring(shutterScale, { toValue: 1,    useNativeDriver: true, speed: 28, bounciness: 12 }),
     ]).start()
 
-    // Flash animation
     Animated.sequence([
       Animated.timing(flashOpacity, { toValue: 0.9, duration: 50,  useNativeDriver: true }),
       Animated.timing(flashOpacity, { toValue: 0,   duration: 400, useNativeDriver: true }),
@@ -76,14 +126,15 @@ export default function Home() {
 
     try {
       const photo = await cameraRef.current.takePictureAsync({ quality: 0.82, base64: false })
-      // Add to queue and immediately stay on camera — no preview, no waiting
+      // Save to disk first, then add to memory queue
       uploadQueue.current.push(photo.uri)
       setPendingCount(uploadQueue.current.length)
+      await saveQueue(uploadQueue.current)  // persists even if app closes now
       processNextInQueue()
     } catch (e) {
       Alert.alert('Capture Error', String(e))
     } finally {
-      busy.current = false  // ready for next shot immediately
+      busy.current = false
     }
   }
 
@@ -113,7 +164,6 @@ export default function Home() {
     <View style={styles.bg}>
       <StatusBar barStyle="light-content" hidden />
 
-      {/* Camera — always mounted */}
       <CameraView ref={cameraRef} style={StyleSheet.absoluteFill} facing={facing} zoom={zoom} />
 
       {/* White flash */}
@@ -122,7 +172,7 @@ export default function Home() {
         style={[StyleSheet.absoluteFill, { backgroundColor: '#fff', opacity: flashOpacity }]}
       />
 
-      {/* Upload queue badge — shows pending count when uploading */}
+      {/* Upload badge — top right, visible when queue has items */}
       {pendingCount > 0 && (
         <View style={styles.badge}>
           <View style={styles.badgeDot} />
@@ -133,7 +183,6 @@ export default function Home() {
       {/* Bottom controls */}
       <Animated.View style={[styles.bottomBar, { opacity: controlsOpacity, transform: [{ translateY: controlsY }] }]}>
 
-        {/* Zoom pills */}
         <View style={styles.zoomRow}>
           {ZOOM_LEVELS.map(level => (
             <Pressable
@@ -148,7 +197,6 @@ export default function Home() {
           ))}
         </View>
 
-        {/* Shutter */}
         <View style={styles.shutterRow}>
           <Animated.View style={{ transform: [{ scale: shutterScale }] }}>
             <Pressable style={styles.shutter} onPress={handleCapture}>
@@ -157,7 +205,6 @@ export default function Home() {
           </Animated.View>
         </View>
 
-        {/* Bottom row: label | flip */}
         <View style={styles.bottomRow}>
           <View style={styles.bottomSide} />
           <Text style={styles.modeLabel}>PHOTO</Text>
@@ -182,8 +229,6 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#000',
   },
-
-  // ── Permission ──
   permissionScreen: {
     flex: 1,
     backgroundColor: '#080810',
@@ -215,8 +260,6 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: '700',
   },
-
-  // ── Upload badge ──
   badge: {
     position: 'absolute',
     top: 20,
@@ -243,8 +286,6 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     letterSpacing: 0.5,
   },
-
-  // ── Bottom bar ──
   bottomBar: {
     position: 'absolute',
     bottom: 0,
@@ -255,8 +296,6 @@ const styles = StyleSheet.create({
     paddingTop: 16,
     gap: 10,
   },
-
-  // ── Zoom ──
   zoomRow: {
     flexDirection: 'row',
     justifyContent: 'center',
@@ -279,8 +318,6 @@ const styles = StyleSheet.create({
   zoomTextActive: {
     color: '#FFCC00',
   },
-
-  // ── Shutter ──
   shutterRow: {
     alignItems: 'center',
     marginVertical: 8,
@@ -301,8 +338,6 @@ const styles = StyleSheet.create({
     borderRadius: 31,
     backgroundColor: '#ffffff',
   },
-
-  // ── Bottom row ──
   bottomRow: {
     flexDirection: 'row',
     alignItems: 'center',
