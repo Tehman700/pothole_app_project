@@ -15,8 +15,8 @@ export default function Home() {
   const [permission, requestPermission] = useCameraPermissions()
   const [capturedUri, setCapturedUri]   = useState(null)
   const [uploadStatus, setUploadStatus] = useState('idle')
-  const [facing, setFacing]             = useState('back')
-  const [activeZoom, setActiveZoom]     = useState('2x')
+  const [facing, setFacing]             = useState('front')
+  const [activeZoom, setActiveZoom]     = useState('1x')
   const [zoom, setZoom]                 = useState(0)
   const cameraRef   = useRef(null)
   const busy        = useRef(false)
@@ -75,9 +75,6 @@ export default function Home() {
       busy.current = false
     }
   }
-
-  // "react-native": "^0.81.5",
-  // THis is also changed to 0.76.3 because of APK Camera not working
 
   const handleRetake = () => {
     cameraReady.current = false
