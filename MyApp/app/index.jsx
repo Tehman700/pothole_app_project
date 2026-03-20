@@ -186,7 +186,7 @@ export default function Home() {
           <View style={styles.bottomRow}>
             <View style={styles.bottomSide} />
 
-            <Text style={styles.modeActive}>KHURRaAM</Text>
+            <Text style={styles.modeActive}>PHONE</Text>
 
             {/* Flip camera */}
             <View style={styles.bottomSide}>
