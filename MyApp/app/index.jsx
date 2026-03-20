@@ -11,6 +11,8 @@ const ZOOM_LEVELS = [
   { label: '2x',  value: 0.5 },
 ]
 
+
+
 export default function Home() {
   const [permission, requestPermission] = useCameraPermissions()
   const [capturedUri, setCapturedUri]   = useState(null)
