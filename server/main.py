@@ -1,9 +1,17 @@
 from fastapi import FastAPI, File, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse, StreamingResponse
+from fastapi.middleware.cors import CORSMiddleware
 import os, asyncio, boto3
 from botocore.exceptions import BotoCoreError, ClientError
 
 app = FastAPI()
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 UPLOAD_DIR = "uploads"
 LAST_IMAGE_PATH = os.path.join(UPLOAD_DIR, "last.jpg")
