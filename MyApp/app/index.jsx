@@ -1,6 +1,6 @@
 import {
   StyleSheet, Text, View, Pressable,
-  StatusBar, Animated, Alert,
+  StatusBar, Animated, Alert, TextInput, KeyboardAvoidingView, Platform,
 } from 'react-native'
 import { useState, useRef, useEffect } from 'react'
 import { CameraView, useCameraPermissions } from 'expo-camera'
@@ -8,11 +8,31 @@ import AsyncStorage from '@react-native-async-storage/async-storage'
 import NetInfo from '@react-native-community/netinfo'
 
 const SERVER_URL = process.env.EXPO_PUBLIC_SERVER_URL
-const QUEUE_KEY  = 'upload_queue'   // AsyncStorage key
+const QUEUE_KEY    = 'upload_queue'   // AsyncStorage key — stores [{uri, filename}]
+const NAME_KEY     = 'user_name'      // AsyncStorage key — stores the entered name
+const USED_IDS_KEY = 'used_ids'       // AsyncStorage key — stores Set of used numbers per name
 const ZOOM_LEVELS = [
   { label: '1x', value: 0 },
   { label: '2x', value: 0.5 },
 ]
+
+// ── Unique filename generator ───────────────────────────────────────
+// Generates name_XXXXXX where XXXXXX is a 6-digit number never used before by this name
+const generateFilename = async (name) => {
+  const raw = await AsyncStorage.getItem(USED_IDS_KEY)
+  const usedIds = raw ? new Set(JSON.parse(raw)) : new Set()
+
+  let num
+  do {
+    num = Math.floor(100000 + Math.random() * 900000) // always 6 digits
+  } while (usedIds.has(num))
+
+  usedIds.add(num)
+  await AsyncStorage.setItem(USED_IDS_KEY, JSON.stringify([...usedIds]))
+
+  const safeName = name.trim().toLowerCase().replace(/\s+/g, '_')
+  return `${safeName}_${num}`
+}
 
 export default function Home() {
   const [permission, requestPermission] = useCameraPermissions()
@@ -20,10 +40,12 @@ export default function Home() {
   const [activeZoom, setActiveZoom]     = useState('1x')
   const [zoom, setZoom]                 = useState(0)
   const [pendingCount, setPendingCount] = useState(0)
+  const [userName, setUserName]         = useState(null)   // null = not loaded yet
+  const [nameInput, setNameInput]       = useState('')     // text field value
 
   const cameraRef   = useRef(null)
   const busy        = useRef(false)
-  const uploadQueue = useRef([])    // in-memory queue (synced with AsyncStorage)
+  const uploadQueue = useRef([])    // [{uri, filename}] — synced with AsyncStorage
   const processing  = useRef(false)
 
   // ── Animations ─────────────────────────────────────────────────────
@@ -34,14 +56,18 @@ export default function Home() {
 
   // ── On App Open ────────────────────────────────────────────────────
   useEffect(() => {
-    // 1. Load any images that were saved before app was closed
+    AsyncStorage.getItem(NAME_KEY).then(saved => {
+      setUserName(saved || '')  // '' means no name yet, triggers name screen
+    })
+  }, [])
+
+  useEffect(() => {
+    if (!userName) return  // wait until name is set
+
     loadSavedQueue()
 
-    // 2. Watch network — when internet comes back, resume uploading
     const unsubscribe = NetInfo.addEventListener(state => {
-      if (state.isConnected) {
-        processNextInQueue()
-      }
+      if (state.isConnected) processNextInQueue()
     })
 
     Animated.parallel([
@@ -49,20 +75,27 @@ export default function Home() {
       Animated.timing(controlsY,       { toValue: 0, duration: 500, useNativeDriver: true, delay: 200 }),
     ]).start()
 
-    return () => unsubscribe()  // cleanup listener on unmount
-  }, [])
+    return () => unsubscribe()
+  }, [userName])
+
+  // ── Name Submit ────────────────────────────────────────────────────
+  const handleNameSubmit = async () => {
+    const trimmed = nameInput.trim()
+    if (!trimmed) return
+    await AsyncStorage.setItem(NAME_KEY, trimmed)
+    setUserName(trimmed)
+  }
 
   // ── AsyncStorage Helpers ───────────────────────────────────────────
-
   const loadSavedQueue = async () => {
     try {
       const saved = await AsyncStorage.getItem(QUEUE_KEY)
       if (saved) {
-        const uris = JSON.parse(saved)
-        if (uris.length > 0) {
-          uploadQueue.current = uris
-          setPendingCount(uris.length)
-          processNextInQueue()  // start uploading saved images immediately
+        const items = JSON.parse(saved)
+        if (items.length > 0) {
+          uploadQueue.current = items
+          setPendingCount(items.length)
+          processNextInQueue()
         }
       }
     } catch (e) {
@@ -70,9 +103,9 @@ export default function Home() {
     }
   }
 
-  const saveQueue = async (uris) => {
+  const saveQueue = async (items) => {
     try {
-      await AsyncStorage.setItem(QUEUE_KEY, JSON.stringify(uris))
+      await AsyncStorage.setItem(QUEUE_KEY, JSON.stringify(items))
     } catch (e) {
       console.error('[queue save error]', e)
     }
@@ -82,27 +115,25 @@ export default function Home() {
   const processNextInQueue = async () => {
     if (processing.current || uploadQueue.current.length === 0) return
 
-    // Check connectivity before attempting
     const net = await NetInfo.fetch()
-    if (!net.isConnected) return  // will resume when NetInfo fires again
+    if (!net.isConnected) return
 
     processing.current = true
-    const uri = uploadQueue.current[0]
+    const { uri, filename } = uploadQueue.current[0]
 
     try {
       const form = new FormData()
       form.append('file', { uri, name: 'photo.jpg', type: 'image/jpeg' })
+      form.append('filename', filename)   // e.g. "john_482913"
       await fetch(`${SERVER_URL}/upload`, { method: 'POST', body: form })
 
-      // Success — remove from queue and disk
       uploadQueue.current.shift()
       setPendingCount(uploadQueue.current.length)
       await saveQueue(uploadQueue.current)
       processing.current = false
-      processNextInQueue()  // move to next item
+      processNextInQueue()
 
     } catch (e) {
-      // Failure — keep item in queue, retry after 5 seconds
       console.error('[upload failed, retrying in 5s]', e)
       processing.current = false
       setTimeout(() => processNextInQueue(), 5000)
@@ -125,11 +156,11 @@ export default function Home() {
     ]).start()
 
     try {
-      const photo = await cameraRef.current.takePictureAsync({ quality: 0.82, base64: false })
-      // Save to disk first, then add to memory queue
-      uploadQueue.current.push(photo.uri)
+      const photo    = await cameraRef.current.takePictureAsync({ quality: 0.82, base64: false })
+      const filename = await generateFilename(userName)
+      uploadQueue.current.push({ uri: photo.uri, filename })
       setPendingCount(uploadQueue.current.length)
-      await saveQueue(uploadQueue.current)  // persists even if app closes now
+      await saveQueue(uploadQueue.current)
       processNextInQueue()
     } catch (e) {
       Alert.alert('Capture Error', String(e))
@@ -143,6 +174,9 @@ export default function Home() {
     setZoom(level.value)
   }
 
+  // ── Not loaded yet ─────────────────────────────────────────────────
+  if (userName === null) return <View style={styles.bg} />
+
   // ── Permission ─────────────────────────────────────────────────────
   if (!permission) return <View style={styles.bg} />
 
@@ -151,11 +185,41 @@ export default function Home() {
       <View style={styles.permissionScreen}>
         <StatusBar barStyle="light-content" />
         <Text style={styles.permissionTitle}>Camera Access</Text>
-        <Text style={styles.permissionSub}>Required to capture and analyze through Model</Text>
+        <Text style={styles.permissionSub}>Required to capture and analyze road conditions</Text>
         <Pressable style={({ pressed }) => [styles.grantBtn, pressed && { opacity: 0.75 }]} onPress={requestPermission}>
           <Text style={styles.grantBtnText}>Allow Camera</Text>
         </Pressable>
       </View>
+    )
+  }
+
+  // ── Name Screen ────────────────────────────────────────────────────
+  if (!userName) {
+    return (
+      <KeyboardAvoidingView
+        style={styles.nameScreen}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      >
+        <StatusBar barStyle="light-content" />
+        <Text style={styles.nameTitle}>Welcome</Text>
+        <Text style={styles.nameSub}>Enter your name to get started</Text>
+        <TextInput
+          style={styles.nameInput}
+          placeholder="Your name"
+          placeholderTextColor="#4b5563"
+          value={nameInput}
+          onChangeText={setNameInput}
+          autoFocus
+          returnKeyType="done"
+          onSubmitEditing={handleNameSubmit}
+        />
+        <Pressable
+          style={({ pressed }) => [styles.grantBtn, { marginTop: 12 }, (!nameInput.trim() || pressed) && { opacity: 0.5 }]}
+          onPress={handleNameSubmit}
+        >
+          <Text style={styles.grantBtnText}>Continue</Text>
+        </Pressable>
+      </KeyboardAvoidingView>
     )
   }
 
@@ -179,6 +243,18 @@ export default function Home() {
           <Text style={styles.badgeText}>Uploading {pendingCount}</Text>
         </View>
       )}
+
+      {/* Name chip — top left */}
+      <Pressable
+        style={styles.nameChip}
+        onPress={() => {
+          AsyncStorage.removeItem(NAME_KEY)
+          setUserName('')
+          setNameInput('')
+        }}
+      >
+        <Text style={styles.nameChipText}>{userName}  ✕</Text>
+      </Pressable>
 
       {/* Bottom controls */}
       <Animated.View style={[styles.bottomBar, { opacity: controlsOpacity, transform: [{ translateY: controlsY }] }]}>
@@ -228,6 +304,52 @@ const styles = StyleSheet.create({
   bg: {
     flex: 1,
     backgroundColor: '#000',
+  },
+  nameScreen: {
+    flex: 1,
+    backgroundColor: '#080810',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 40,
+  },
+  nameTitle: {
+    fontSize: 28,
+    fontWeight: '700',
+    color: '#ffffff',
+    marginBottom: 8,
+  },
+  nameSub: {
+    fontSize: 14,
+    color: '#6b7280',
+    textAlign: 'center',
+    marginBottom: 32,
+  },
+  nameInput: {
+    width: '100%',
+    backgroundColor: '#1a1a2e',
+    borderWidth: 1,
+    borderColor: '#ffffff20',
+    borderRadius: 14,
+    paddingHorizontal: 18,
+    paddingVertical: 14,
+    fontSize: 16,
+    color: '#ffffff',
+  },
+  nameChip: {
+    position: 'absolute',
+    top: 20,
+    left: 20,
+    backgroundColor: '#00000088',
+    borderWidth: 1,
+    borderColor: '#ffffff20',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 20,
+  },
+  nameChipText: {
+    color: '#ffffffcc',
+    fontSize: 12,
+    fontWeight: '600',
   },
   permissionScreen: {
     flex: 1,

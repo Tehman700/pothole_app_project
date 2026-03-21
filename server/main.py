@@ -1,4 +1,4 @@
-from fastapi import FastAPI, File, UploadFile
+from fastapi import FastAPI, File, UploadFile, Form
 from fastapi.responses import FileResponse, HTMLResponse, StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 import os, asyncio, boto3
@@ -50,7 +50,7 @@ def upload_to_s3(data: bytes, s3_key: str):
 
 
 @app.post("/upload")
-async def upload_image(file: UploadFile = File(...)):
+async def upload_image(file: UploadFile = File(...), filename: str = Form(None)):
     global upload_version, image_counter
     data = await file.read()
 
@@ -58,9 +58,13 @@ async def upload_image(file: UploadFile = File(...)):
     with open(LAST_IMAGE_PATH, "wb") as f:
         f.write(data)
 
-    # Respond to phone immediately — S3 upload runs in background
-    image_counter += 1
-    s3_key = f"{image_counter}.jpg"
+    # Use app-provided filename (e.g. "john_482913") or fall back to counter
+    if filename:
+        s3_key = f"{filename}.jpg"
+    else:
+        image_counter += 1
+        s3_key = f"{image_counter}.jpg"
+
     asyncio.get_event_loop().run_in_executor(None, upload_to_s3, data, s3_key)
 
     upload_version += 1
