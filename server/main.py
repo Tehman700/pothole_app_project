@@ -106,104 +106,12 @@ async def root():
     return HTMLResponse("""<!DOCTYPE html>
 <html>
 <head>
-  <title>Lens — Live</title>
+  <title>Server</title>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
-    body {
-      background: #080810;
-      width: 100vw; height: 100vh;
-      display: flex; align-items: center; justify-content: center;
-      font-family: -apple-system, sans-serif;
-      overflow: hidden;
-    }
-    #img {
-      max-width: 100vw; max-height: 100vh;
-      object-fit: contain;
-      opacity: 0;
-      transition: opacity 0.35s ease;
-    }
-    #waiting {
-      color: #4b5563;
-      font-size: 12px;
-      letter-spacing: 3px;
-      text-transform: uppercase;
-    }
-    #badge {
-      position: fixed;
-      top: 20px; right: 20px;
-      background: #4ade8018;
-      border: 1px solid #4ade8050;
-      color: #4ade80;
-      padding: 7px 16px;
-      border-radius: 20px;
-      font-size: 11px;
-      font-weight: 600;
-      letter-spacing: 2px;
-      opacity: 0;
-      transition: opacity 0.3s ease;
-    }
-    #pill {
-      position: fixed;
-      top: 20px; left: 20px;
-      background: #ffffff0d;
-      border: 1px solid #ffffff15;
-      color: #ffffff80;
-      padding: 7px 16px;
-      border-radius: 20px;
-      font-size: 11px;
-      font-weight: 700;
-      letter-spacing: 2.5px;
-      display: flex; align-items: center; gap: 8px;
-    }
-    #dot {
-      width: 6px; height: 6px; border-radius: 3px;
-      background: #a78bfa;
-      animation: pulse 1.8s ease-in-out infinite;
-    }
-    @keyframes pulse {
-      0%, 100% { opacity: 1; }
-      50% { opacity: 0.2; }
-    }
+    body { background: #080810; width: 100vw; height: 100vh; }
   </style>
 </head>
-<body>
-  <div id="pill"><span id="dot"></span>LENS</div>
-  <div id="waiting">Waiting for image…</div>
-  <img id="img" />
-  <div id="badge">NEW IMAGE</div>
-
-  <script>
-    let isFirst = true;
-    let badgeTimer = null;
-    const img = document.getElementById('img');
-    const waiting = document.getElementById('waiting');
-    const badge = document.getElementById('badge');
-
-    const es = new EventSource('/events');
-
-    es.onmessage = async function(e) {
-      const version = parseInt(e.data);
-      if (version === 0) return;
-
-      if (!isFirst) {
-        img.style.opacity = '0';
-        await new Promise(r => setTimeout(r, 180));
-      }
-
-      img.onload = () => { img.style.opacity = '1'; };
-      img.src = '/image?v=' + version;
-      waiting.style.display = 'none';
-
-      if (!isFirst) {
-        badge.style.opacity = '1';
-        clearTimeout(badgeTimer);
-        badgeTimer = setTimeout(() => { badge.style.opacity = '0'; }, 2000);
-      }
-      isFirst = false;
-    };
-
-    es.onerror = function() {};
-  </script>
-</body>
+<body></body>
 </html>
 """)
