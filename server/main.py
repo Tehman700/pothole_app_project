@@ -184,6 +184,18 @@ async def root():
       box-shadow: 0 0 80px rgba(167,139,250,0.07);
     }
 
+    @media (max-width: 480px) {
+      .card {
+        padding: 36px 28px;
+        border-radius: 20px;
+        width: 94%;
+      }
+      .name { font-size: 32px; }
+      .uni-badge { font-size: 11px; padding: 5px 12px; }
+      .status-text { font-size: 12px; }
+      .footer { font-size: 10px; text-align: center; padding: 0 16px; }
+    }
+
     @keyframes cardIn {
       from { opacity: 0; transform: translateY(40px) scale(0.96); }
       to   { opacity: 1; transform: translateY(0)    scale(1); }
@@ -354,7 +366,7 @@ async def root():
   <div class="card">
     <div class="uni-badge">
       <span class="uni-dot"></span>
-      University of Engineering and Tecnology Taxila &nbsp;·&nbsp; Computer Engineering
+      University of Engineering and Technology Taxila - Computer Engineering
     </div>
 
     <div class="name">Tehman Hassan</div>
@@ -367,7 +379,7 @@ async def root():
     </div>
   </div>
 
-  <div class="footer">© 2026 Tehman Hassan · University of Engineering and Technolgy Taxila</div>
+  <div class="footer">© 2026 Tehman Hassan · University of Engineering and Technology Taxila</div>
 
   <script>
     // Generate floating particles
